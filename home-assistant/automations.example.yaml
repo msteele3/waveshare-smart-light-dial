@@ -1,0 +1,42 @@
+# Example entry for automations.yaml. Replace the trigger's entity ID if
+# Home Assistant gives your dial select a different name. Make scenes named
+# scene.room_a_cool_mode, scene.room_a_morning, etc. for all non-Off presets.
+- id: smart_light_dial_apply_request
+  alias: Smart light dial - apply request
+  mode: queued
+  triggers:
+    - trigger: state
+      entity_id: select.smart_light_dial_zone_mode_request
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ trigger.to_state is not none and
+           trigger.to_state.state not in ['Idle', 'unknown', 'unavailable'] and
+           ' / ' in trigger.to_state.state }}
+  actions:
+    - variables:
+        request: "{{ trigger.to_state.state }}"
+    - variables:
+        zone: "{{ request.split(' / ')[0] }}"
+        preset: "{{ request.split(' / ')[1] }}"
+    - variables:
+        zone_slug: "{{ {'Room A': 'room_a', 'Room B': 'room_b', 'Room C': 'room_c'}.get(zone, '') }}"
+    - condition: template
+      value_template: "{{ zone_slug != '' and preset in ['Cool Mode', 'Morning', 'Warm Fire Light', 'About to Sleep', 'Off'] }}"
+    - action: input_select.select_option
+      target:
+        entity_id: "{{ 'input_select.' ~ zone_slug ~ '_mode' }}"
+      data:
+        option: "{{ preset }}"
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ preset == 'Off' }}"
+          sequence:
+            - action: light.turn_off
+              target:
+                entity_id: "{{ 'light.' ~ zone_slug }}"
+      default:
+        - action: scene.turn_on
+          target:
+            entity_id: "{{ 'scene.' ~ zone_slug ~ '_' ~ (preset | lower | replace(' ', '_')) }}"

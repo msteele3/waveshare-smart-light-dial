@@ -1,0 +1,10 @@
+secrets.yaml
+.esphome/
+*.bin
+*.elf
+*.ota.bin
+*.zip
+*.tar
+*.log
+.env*
+!secrets.yaml.example

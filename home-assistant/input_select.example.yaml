@@ -1,0 +1,30 @@
+# Add these under input_select: in your Home Assistant configuration,
+# or create three equivalent helpers in the UI. Do not paste this file as-is
+# if input_select: is already defined in the same configuration file.
+room_a_mode:
+  name: Room A Mode
+  options:
+    - Cool Mode
+    - Morning
+    - Warm Fire Light
+    - About to Sleep
+    - Off
+  initial: Off
+room_b_mode:
+  name: Room B Mode
+  options:
+    - Cool Mode
+    - Morning
+    - Warm Fire Light
+    - About to Sleep
+    - Off
+  initial: Off
+room_c_mode:
+  name: Room C Mode
+  options:
+    - Cool Mode
+    - Morning
+    - Warm Fire Light
+    - About to Sleep
+    - Off
+  initial: Off
