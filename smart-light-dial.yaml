@@ -2,8 +2,8 @@
 # an independent light-zone mode picker. A touch opens a zone; a three-second
 # dwell on a mode applies it through Home Assistant.
 esphome:
-  name: smart-light-dial
-  friendly_name: Smart Light Dial
+  name: waveshare-knob
+  friendly_name: Waveshare Knob
   on_boot:
     priority: -100
     then:
@@ -34,7 +34,9 @@ light:
     id: screen_backlight
     name: Screen Backlight
     output: backlight_pwm
-    restore_mode: ALWAYS_ON
+    # Start dark until Pacific time has synchronized. This avoids a bright
+    # flash if power returns during the night.
+    restore_mode: ALWAYS_OFF
     initial_state:
       brightness: 80%
     entity_category: config
@@ -82,6 +84,23 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  - id: last_interaction_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: night_mode_active
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  - id: screen_asleep
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+time:
+  - platform: homeassistant
+    id: pacific_time
+    timezone: America/Los_Angeles
 
 i2c:
   sda: GPIO11
@@ -101,13 +120,19 @@ touchscreen:
           then:
             - lambda: |-
                 id(last_touch_ms) = millis();
+                id(last_interaction_ms) = millis();
+                if (id(screen_asleep)) {
+                  id(screen_asleep) = false;
+                  id(screen_backlight).turn_on().set_brightness(0.8f).perform();
+                  return;  // The first tap only wakes the screen.
+                }
                 id(mode_page) = !id(mode_page);
                 id(mode_sent) = false;
                 id(dwell_active) = false;
                 if (id(mode_page)) {
-                  const char *applied = id(room_a_mode).state.c_str();
-                  if (id(selected_zone) == 1) applied = id(room_b_mode).state.c_str();
-                  if (id(selected_zone) == 2) applied = id(room_c_mode).state.c_str();
+                  const char *applied = id(bedroom_mode).state.c_str();
+                  if (id(selected_zone) == 1) applied = id(bathroom_mode).state.c_str();
+                  if (id(selected_zone) == 2) applied = id(living_mode).state.c_str();
                   const char *modes[] = {"Cool Mode", "Morning", "Warm Fire Light",
                                          "About to Sleep", "Off"};
                   id(selected_mode) = 0;
@@ -127,21 +152,21 @@ select:
     optimistic: true
     options:
       - Idle
-      - Room A / Cool Mode
-      - Room A / Morning
-      - Room A / Warm Fire Light
-      - Room A / About to Sleep
-      - Room A / Off
-      - Room B / Cool Mode
-      - Room B / Morning
-      - Room B / Warm Fire Light
-      - Room B / About to Sleep
-      - Room B / Off
-      - Room C / Cool Mode
-      - Room C / Morning
-      - Room C / Warm Fire Light
-      - Room C / About to Sleep
-      - Room C / Off
+      - Bedroom / Cool Mode
+      - Bedroom / Morning
+      - Bedroom / Warm Fire Light
+      - Bedroom / About to Sleep
+      - Bedroom / Off
+      - Bathroom / Cool Mode
+      - Bathroom / Morning
+      - Bathroom / Warm Fire Light
+      - Bathroom / About to Sleep
+      - Bathroom / Off
+      - Living Room / Cool Mode
+      - Living Room / Morning
+      - Living Room / Warm Fire Light
+      - Living Room / About to Sleep
+      - Living Room / Off
 
 script:
   - id: apply_preview_after_dwell
@@ -154,7 +179,7 @@ script:
             lambda: 'return id(mode_page) && id(dial_online).state;'
           then:
             - lambda: |-
-                const char *zones[] = {"Room A", "Room B", "Room C"};
+                const char *zones[] = {"Bedroom", "Bathroom", "Living Room"};
                 const char *modes[] = {"Cool Mode", "Morning", "Warm Fire Light",
                                        "About to Sleep", "Off"};
                 std::string request = std::string(zones[id(selected_zone)]) +
@@ -201,22 +226,22 @@ display:
       } else if (!id(mode_page)) {
         it.filled_rectangle(163, 304, 34, 3, ink);
       }
-      const char *applied = id(room_a_mode).state.c_str();
-      if (id(selected_zone) == 1) applied = id(room_b_mode).state.c_str();
-      if (id(selected_zone) == 2) applied = id(room_c_mode).state.c_str();
+      const char *applied = id(bedroom_mode).state.c_str();
+      if (id(selected_zone) == 1) applied = id(bathroom_mode).state.c_str();
+      if (id(selected_zone) == 2) applied = id(living_mode).state.c_str();
       const char *mode_names[] = {"Cool Mode", "Morning", "Warm Fire Light",
                                   "About to Sleep", "Off"};
-      const char *zone = "Room A";
-      const char *zone_caps = "ROOM A";
-      const char *state = id(room_a_state).state.c_str();
+      const char *zone = "Bedroom";
+      const char *zone_caps = "BEDROOM";
+      const char *state = id(bedroom_state).state.c_str();
       if (id(selected_zone) == 1) {
-        zone = "Room B";
-        zone_caps = "ROOM B";
-        state = id(room_b_state).state.c_str();
+        zone = "Bathroom";
+        zone_caps = "BATHROOM";
+        state = id(bathroom_state).state.c_str();
       } else if (id(selected_zone) == 2) {
-        zone = "Room C";
-        zone_caps = "ROOM C";
-        state = id(room_c_state).state.c_str();
+        zone = "Living room";
+        zone_caps = "LIVING ROOM";
+        state = id(living_state).state.c_str();
       }
       if (!id(mode_page)) {
         it.printf(180, 103, id(font_label), muted, TextAlign::CENTER,
@@ -280,6 +305,9 @@ wifi:
   on_connect:
     - component.update: main_display
   on_disconnect:
+    - binary_sensor.template.publish:
+        id: ha_reachable
+        state: OFF
     - component.update: main_display
 
 # Home Assistant is the client. Noise encryption authenticates it and protects
@@ -293,8 +321,12 @@ api:
 
 ota:
   - platform: esphome
-    # ESPHome supports encrypted OTA when configured with this API key.
+    # ESPHome 2026.9+ reuses the API key and encrypts firmware in transit.
     encryption:
+
+http_request:
+  timeout: 3s
+  follow_redirects: false
 
 binary_sensor:
   # This board sends separate clockwise/counter-clockwise pulses on GPIO8/7;
@@ -312,6 +344,11 @@ binary_sensor:
       - delayed_off: 5ms
     on_press:
       - lambda: |-
+          id(last_interaction_ms) = millis();
+          if (id(screen_asleep)) {
+            id(screen_asleep) = false;
+            id(screen_backlight).turn_on().set_brightness(0.8f).perform();
+          }
           if (id(mode_page)) {
             id(selected_mode) = (id(selected_mode) + 1) % 5;
             id(mode_sent) = false;
@@ -339,6 +376,11 @@ binary_sensor:
       - delayed_off: 5ms
     on_press:
       - lambda: |-
+          id(last_interaction_ms) = millis();
+          if (id(screen_asleep)) {
+            id(screen_asleep) = false;
+            id(screen_backlight).turn_on().set_brightness(0.8f).perform();
+          }
           if (id(mode_page)) {
             id(selected_mode) = (id(selected_mode) + 4) % 5;
             id(mode_sent) = false;
@@ -353,6 +395,11 @@ binary_sensor:
           then:
             - script.execute: apply_preview_after_dwell
       - component.update: main_display
+  - platform: template
+    id: ha_reachable
+    name: Home Assistant Reachable
+    device_class: connectivity
+    entity_category: diagnostic
   - platform: status
     id: dial_online
     internal: true
@@ -367,54 +414,89 @@ sensor:
 
 text_sensor:
   - platform: homeassistant
-    id: room_a_mode
-    entity_id: input_select.room_a_mode
+    id: bedroom_mode
+    entity_id: input_select.knob_bedroom_mode
     internal: true
     on_value:
       - component.update: main_display
   - platform: homeassistant
-    id: room_b_mode
-    entity_id: input_select.room_b_mode
+    id: bathroom_mode
+    entity_id: input_select.knob_bathroom_mode
     internal: true
     on_value:
       - component.update: main_display
   - platform: homeassistant
-    id: room_c_mode
-    entity_id: input_select.room_c_mode
+    id: living_mode
+    entity_id: input_select.knob_living_room_mode
     internal: true
     on_value:
       - component.update: main_display
   - platform: homeassistant
-    id: room_a_state
-    entity_id: light.room_a
+    id: bedroom_state
+    entity_id: light.matt_bedroom_lights
     internal: true
     on_value:
       - lambda: |-
-          ESP_LOGI("light_state", "Room A: %s", x.c_str());
+          ESP_LOGI("light_state", "Bedroom: %s", x.c_str());
       - component.update: main_display
   - platform: homeassistant
-    id: room_b_state
-    entity_id: light.room_b
+    id: bathroom_state
+    entity_id: light.tfl_lr1
     internal: true
     on_value:
       - lambda: |-
-          ESP_LOGI("light_state", "Room B: %s", x.c_str());
+          ESP_LOGI("light_state", "Bathroom: %s", x.c_str());
       - component.update: main_display
   - platform: homeassistant
-    id: room_c_state
-    entity_id: light.room_c
+    id: living_state
+    entity_id: light.living_room_lights
     internal: true
     on_value:
       - lambda: |-
-          ESP_LOGI("light_state", "Room C: %s", x.c_str());
+          ESP_LOGI("light_state", "Living Room: %s", x.c_str());
       - component.update: main_display
   - platform: wifi_info
     ip_address:
       name: Dial IP Address
       entity_category: diagnostic
 
-# Refresh the countdown while a mode is waiting to apply.
+# This unauthenticated static endpoint confirms the dial can reach the actual
+# Home Assistant service on the Pi. No token or state is sent over HTTP.
 interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          const auto now = id(pacific_time).now();
+          // Without a valid clock, prefer darkness; turning or touching can
+          // still wake the dial for 20 seconds.
+          // ESPHome numbers Sunday as 1 and Saturday as 7.
+          const bool valid = now.is_valid();
+          const bool weekend = valid &&
+                               (now.day_of_week == 1 || now.day_of_week == 7);
+          const int wake_minute = weekend ? 9 * 60 : 8 * 60;
+          const int minute_of_day = valid ? now.hour * 60 + now.minute : 0;
+          const bool night = !valid ||
+                             minute_of_day >= 20 * 60 + 30 ||
+                             minute_of_day < wake_minute;
+          if (night != id(night_mode_active)) {
+            id(night_mode_active) = night;
+            if (night) {
+              id(screen_asleep) = true;
+              id(last_interaction_ms) = 0;
+              id(screen_backlight).turn_off().perform();
+            } else {
+              id(screen_asleep) = false;
+              id(screen_backlight).turn_on().set_brightness(0.8f).perform();
+            }
+            ESP_LOGI("night_screen", "Pacific schedule: %s",
+                     night ? "sleep" : "day");
+          }
+          if (night && !id(screen_asleep) &&
+              millis() - id(last_interaction_ms) >= 20000) {
+            id(screen_asleep) = true;
+            id(screen_backlight).turn_off().perform();
+            ESP_LOGI("night_screen", "Screen slept after inactivity");
+          }
   - interval: 1s
     then:
       - if:
@@ -422,3 +504,26 @@ interval:
             lambda: 'return id(mode_page) && id(dwell_active);'
           then:
             - component.update: main_display
+  - interval: 15s
+    startup_delay: 5s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: !secret ha_health_url
+                on_response:
+                  then:
+                    - binary_sensor.template.publish:
+                        id: ha_reachable
+                        state: !lambda 'return response->status_code == 200;'
+                on_error:
+                  then:
+                    - binary_sensor.template.publish:
+                        id: ha_reachable
+                        state: OFF
+          else:
+            - binary_sensor.template.publish:
+                id: ha_reachable
+                state: OFF

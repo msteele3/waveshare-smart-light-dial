@@ -1,12 +1,12 @@
 # Example entry for automations.yaml. Replace the trigger's entity ID if
 # Home Assistant gives your dial select a different name. Make scenes named
-# scene.room_a_cool_mode, scene.room_a_morning, etc. for all non-Off presets.
+# scene.bedliving_roomool_mode, scene.bedroom_morning, etc. for all non-Off presets.
 - id: smart_light_dial_apply_request
   alias: Smart light dial - apply request
   mode: queued
   triggers:
     - trigger: state
-      entity_id: select.smart_light_dial_zone_mode_request
+      entity_id: select.waveshare_knob_zone_mode_request
   conditions:
     - condition: template
       value_template: >-
@@ -20,12 +20,12 @@
         zone: "{{ request.split(' / ')[0] }}"
         preset: "{{ request.split(' / ')[1] }}"
     - variables:
-        zone_slug: "{{ {'Room A': 'room_a', 'Room B': 'room_b', 'Room C': 'room_c'}.get(zone, '') }}"
+        zone_slug: "{{ {'Bedroom': 'bedroom', 'Bathroom': 'bathroom', 'Living Room': 'living_room'}.get(zone, '') }}"
     - condition: template
       value_template: "{{ zone_slug != '' and preset in ['Cool Mode', 'Morning', 'Warm Fire Light', 'About to Sleep', 'Off'] }}"
     - action: input_select.select_option
       target:
-        entity_id: "{{ 'input_select.' ~ zone_slug ~ '_mode' }}"
+        entity_id: "{{ 'input_select.knob_' ~ zone_slug ~ '_mode' }}"
       data:
         option: "{{ preset }}"
     - choose:
@@ -35,7 +35,7 @@
           sequence:
             - action: light.turn_off
               target:
-                entity_id: "{{ 'light.' ~ zone_slug }}"
+                entity_id: "{{ {'bedroom': 'light.matt_bedroom_lights', 'bathroom': 'light.tfl_lr1', 'living_room': 'light.living_room_lights'}[zone_slug] }}"
       default:
         - action: scene.turn_on
           target:

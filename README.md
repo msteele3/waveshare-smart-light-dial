@@ -2,7 +2,7 @@
 
 A reusable ESPHome starter for the [Waveshare ESP32-S3 Knob Touch LCD 1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8). Turn the dial to choose one of three rooms, tap to see lighting presets, then pause for three seconds to apply one. Home Assistant handles the actual lights and scenes.
 
-This is a sanitized adaptation of my own smart light dial, with generic room names and entity IDs. Your network credentials, API key, Home Assistant entity IDs, scenes, and room layout belong in your local configuration. No original secrets or generated firmware are included here.
+This repository owns the knob display and Home Assistant application, including the current bedroom/bathroom/living-room labels, nighttime screen sleep, and wake-on-interaction behavior. Network credentials, the API key, and the Home Assistant health-check address stay in ignored `secrets.yaml`. Review the entity IDs for your installation. No secrets or generated firmware are included.
 
 ## Hardware and software
 
@@ -24,7 +24,7 @@ The device does not contain a Home Assistant token or issue arbitrary service ca
 1. Clone this repository. Copy `secrets.yaml.example` to `secrets.yaml`, then fill in your **own** 2.4 GHz Wi-Fi SSID/password and a unique 32-byte base64 API key. Keep `secrets.yaml` private.
 2. Edit the six `entity_id` entries near the end of `smart-light-dial.yaml` to match your own Home Assistant `input_select` helpers and `light` entities. The sample expects three helpers, one for each room. You can rename the three room labels everywhere in the YAML if you prefer. Do not put private details into a public fork.
 3. Create the helpers from [`home-assistant/input_select.example.yaml`](home-assistant/input_select.example.yaml), or make equivalent helpers in Home Assistant's UI. Each helper needs the five exact options shown in the file.
-4. Create scenes for each room/preset pair. The sample automation expects names such as `scene.room_a_morning` and `scene.room_c_about_to_sleep`. Adjust those mappings if your scenes use other IDs.
+4. Create scenes for each room/preset pair. The sample automation expects names such as `scene.bedroom_morning` and `scene.living_room_about_to_sleep`. Adjust those mappings if your scenes use other IDs.
 5. Add [`home-assistant/automations.example.yaml`](home-assistant/automations.example.yaml) to your Home Assistant automations. Update the trigger's dial `select` entity ID if Home Assistant assigns a different one. Reload automations and helpers, or restart Home Assistant as appropriate.
 6. From the repo directory, run `esphome config smart-light-dial.yaml` to validate the configuration. Connect the dial over USB and run `esphome run smart-light-dial.yaml` to compile and install. The first install needs a serial connection; later updates can use encrypted OTA.
 7. Attach the dial with a Command Strip after routing the cable. Clean the surfaces and follow the strip's instructions.
@@ -53,3 +53,9 @@ See [ESPHome security best practices](https://esphome.io/guides/security_best_pr
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Coordinated CSI builds
+
+[WiFiSensing](https://github.com/msteele3/wifi-sensing) owns the CSI external component and paired firmware releases. Its builder checks out a pinned commit of this application and merges a local CSI package. This application remains independently buildable without CSI; do not copy the CSI C++ implementation into this repository.
+
+Use ESPHome **2026.10.1**. Set `ha_health_url` in `secrets.yaml` to your Home Assistant manifest URL. The display starts dark until Pacific time is available and uses the nighttime sleep/wake behavior from the deployed local application.
